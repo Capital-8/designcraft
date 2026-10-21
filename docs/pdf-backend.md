@@ -41,7 +41,9 @@ Windows/Linux runtime and PDF/A/PDF/X certification remain separate acceptance w
 Placed-PDF geometry, layers and raster output use `craft-pdf` with its explicit `raster`
 feature. The facade and four patched Hayro crates are pinned to one immutable craft-libs
 revision. The backend source was transferred from PdfCraft revision
-`0a0986483378b57d62103a36490bd66166d32c8f`; its provenance and patch ledger live in craft-libs.
+`7437bde378f43856eada40af25b983812e615e8a`; the per-crate `vendor/SOURCE.json` manifests and `vendor/README.craft-reader.md`
+record the transfer and subsequent craft-libs patches. Asset provenance and hashes
+are recorded separately in ASSETS.md.
 `cargo xtask pdf-deps` checks unique resolved packages, exact versions and sources.
 
 DesignCraft retains placement, layer-name policy, document state and the application render

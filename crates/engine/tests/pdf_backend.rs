@@ -22,11 +22,17 @@ fn pdf(objects: &[String]) -> Vec<u8> {
 }
 
 fn layered_pdf(second_name: &str) -> Vec<u8> {
+    layered_pdf_with_box(second_name, "")
+}
+
+fn layered_pdf_with_box(second_name: &str, page_box: &str) -> Vec<u8> {
     let content = "/OC /a BDC 0 0 1 rg 10 10 35 80 re f EMC /OC /b BDC 1 0 0 rg 55 10 35 80 re f EMC";
     pdf(&[
         "<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R 6 0 R] /D << /Order [5 0 R 6 0 R] >> >> >>".into(),
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".into(),
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /Properties << /a 5 0 R /b 6 0 R >> >> /Contents 4 0 R >>".into(),
+        format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] {page_box} /Resources << /Properties << /a 5 0 R /b 6 0 R >> >> /Contents 4 0 R >>"
+        ),
         format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
         "<< /Type /OCG /Name (Blue) >>".into(),
         format!("<< /Type /OCG /Name ({second_name}) >>"),
@@ -226,14 +232,14 @@ fn placed_standard_font_text_renders_ink_on_a_transparent_background() {
     assert!(ink > 100, "standard-font glyphs must paint visible ink: {ink}");
     assert_eq!(img.pixel(2, 2), [0, 0, 0, 0]);
     assert_eq!(img.pixel(50, 80), [0, 0, 0, 0]);
-    assert!(designcraft_render::pdf_page_png_checked(&bytes, 0, 100, &[]).is_ok());
+    assert!(designcraft_render::pdf_page_png_checked(&bytes, 0, 100, &[], None).is_ok());
     evidence("standard-font-text.png", &img.to_png());
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
 #[cfg_attr(not(target_arch = "wasm32"), test)]
 fn unavailable_placed_page_reports_the_page_and_recovery_action() {
-    let error = designcraft_render::pdf_page_png_checked(&layered_pdf("Red"), 2, 100, &["Red".into()]).unwrap_err();
+    let error = designcraft_render::pdf_page_png_checked(&layered_pdf("Red"), 2, 100, &["Red".into()], None).unwrap_err();
     assert!(matches!(error, designcraft_render::PdfRasterError::MissingPage { page: 3 }));
     assert!(error.to_string().contains("place the replacement PDF again"));
 }
@@ -276,7 +282,7 @@ fn hidden_layers_work_with_an_xref_stream_and_compressed_catalog() {
     let img = rendered(&hidden);
     assert_eq!(img.pixel(75, 50), [0, 0, 0, 0]);
     assert_eq!(img.pixel(25, 50), [0, 0, 255, 255]);
-    assert!(designcraft_render::pdf_page_png_checked(&bytes, 0, 100, &["Red".into()]).is_ok());
+    assert!(designcraft_render::pdf_page_png_checked(&bytes, 0, 100, &["Red".into()], None).is_ok());
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
@@ -288,7 +294,7 @@ fn trailing_whitespace_does_not_prevent_layer_hiding() {
     let img = rendered(&hidden);
     assert_eq!(img.pixel(75, 50), [0, 0, 0, 0]);
     assert_eq!(img.pixel(25, 50), [0, 0, 255, 255]);
-    assert!(designcraft_render::pdf_page_png_checked(&bytes, 0, 100, &["Red".into()]).is_ok());
+    assert!(designcraft_render::pdf_page_png_checked(&bytes, 0, 100, &["Red".into()], None).is_ok());
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
@@ -313,4 +319,31 @@ fn failed_content_decode_aborts_layered_export_without_changing_the_document() {
         assert!(error.contains("broken-content.pdf") && error.contains("content"), "{filter}: {error}");
         assert_eq!(session.execute("file.serialize", &json!({})).unwrap(), before, "{filter}");
     }
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+#[cfg_attr(not(target_arch = "wasm32"), test)]
+fn hidden_layer_export_keeps_the_placed_trim_box() {
+    let bytes = layered_pdf_with_box("Red", "/TrimBox [0 0 50 100]");
+    let mut session = Session::new();
+    session.execute("file.new", &json!({"width": 50, "height": 100, "pages": 1})).unwrap();
+    session.execute("edit.transparencyBlendSpace", &json!({"space": "rgb"})).unwrap();
+    let placed = session
+        .execute(
+            "file.place",
+            &json!({"base64": base64_encode(&bytes), "name": "trimmed-layers.pdf", "pdfCrop": "trim", "x": 0, "y": 0, "width": 100}),
+        )
+        .unwrap();
+    session.execute("object.layerOptions", &json!({"ids": [placed["id"]], "hidden": ["Red"]})).unwrap();
+    let before = session.execute("file.serialize", &json!({})).unwrap();
+    let report = session.execute("file.exportPdf", &json!({"compress": false})).unwrap();
+    let exported = base64_decode(report["base64"].as_str().unwrap());
+    let img = rendered(&exported);
+    assert_eq!((img.width, img.height), (50, 100));
+    // Omitting the shown box squeezes the whole page into the trimmed graphic,
+    // moving the blue rectangle's right edge from x=45 to x=22.5.
+    let blue = img.pixel(35, 50);
+    assert!(blue[2] > 180 && blue[0] < 80, "the trim box keeps the visible layer at its placed coordinates: {blue:?}");
+    assert_eq!(session.execute("file.serialize", &json!({})).unwrap(), before);
+    evidence("trimmed-layer-export.pdf", &exported);
 }

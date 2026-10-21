@@ -13,7 +13,7 @@ fn thin_pdf_page_has_visible_preview_and_export_pixels() {
     let preview = designcraft_render::render_pdf_page(&bytes, 0, 700).unwrap();
     assert_eq!((preview.width(), preview.height()), (700, 1));
     assert!(preview.data().iter().any(|pixel| pixel.a > 0));
-    let png = designcraft_render::pdf_page_png_checked(&bytes, 0, 700, &[]).unwrap();
+    let png = designcraft_render::pdf_page_png_checked(&bytes, 0, 700, &[], None).unwrap();
     let image = image::load_from_memory(&png).unwrap().to_rgba8();
     assert_eq!(image.dimensions(), (700, 1));
     assert!(image.pixels().any(|pixel| pixel[3] > 0));
@@ -27,7 +27,7 @@ fn empty_media_box_preserves_the_parsers_default_page_repair() {
     assert!(size.0 > 0.0 && size.1 > 0.0);
     assert_eq!(Some(size), designcraft_render::pdf_page_size(missing.as_bytes(), 0));
     let preview = designcraft_render::render_pdf_page(&bytes, 0, 700).unwrap();
-    let png = designcraft_render::pdf_page_png_checked(&bytes, 0, 700, &[]).unwrap();
+    let png = designcraft_render::pdf_page_png_checked(&bytes, 0, 700, &[], None).unwrap();
     let image = image::load_from_memory(&png).unwrap();
     assert_eq!((image.width(), image.height()), (u32::from(preview.width()), u32::from(preview.height())));
 }
