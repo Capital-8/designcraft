@@ -261,15 +261,7 @@ fn position_warichu_rows(
     }
 }
 
-fn shift_non_member_glyphs(
-    line: &mut [PlacedGlyph],
-    members: &[usize],
-    old_xs: &[f64],
-    old_x0: f64,
-    old_right: f64,
-    delta: f64,
-    scale: f64,
-) {
+fn shift_non_member_glyphs(line: &mut [PlacedGlyph], members: &[usize], old_xs: &[f64], old_x0: f64, old_right: f64, delta: f64, scale: f64) {
     let mut placed: Vec<(f64, f64)> = old_xs.iter().enumerate().map(|(i, ox)| (*ox, line[members[i]].x)).collect();
     placed.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut member_at = vec![false; line.len()];
