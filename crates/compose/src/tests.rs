@@ -2892,7 +2892,7 @@ fn test_font(family: &str, os2_fields: Option<&[(usize, i16)]>) -> Vec<u8> {
 
 /// [`test_font`] with OS/2 `sTypoAscender` set to `typo_ascender`, or without OS/2 for `None`.
 fn typo_test_font(family: &str, typo_ascender: Option<i16>) -> Vec<u8> {
-    test_font(family, typo_ascender.map(|v| [(TYPO_ASCENDER, v)]).as_ref().map(<[_]>::as_slice))
+    test_font(family, typo_ascender.map(|v| [(TYPO_ASCENDER, v)]).as_ref().map(|f| f.as_slice()))
 }
 
 /// First baseline (frame space) of a 20 pt line in `family` in a frame at y = 36 with a 4 pt top

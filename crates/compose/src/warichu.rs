@@ -217,7 +217,6 @@ fn layout(styles: &[RunStyle], line: &mut [PlacedGlyph], members: &[usize]) -> f
         restore(line, members, &saved);
         return 0.0;
     }
-    let rows = counts.len().max(1);
     let small = st.size * scale;
     // 0 is the default (one small em). Any other value, including a negative one, is added to
     // that em and then clamped so the rows cannot swap order.
