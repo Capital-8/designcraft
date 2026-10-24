@@ -223,10 +223,18 @@ fn layout(styles: &[RunStyle], line: &mut [PlacedGlyph], members: &[usize]) -> f
     // Bounded, so a hostile value can't move a row to an infinite or huge coordinate.
     let spacing = if st.warichu_line_spacing.is_finite() { st.warichu_line_spacing.clamp(-16.0 * st.size, 16.0 * st.size) } else { 0.0 };
     let gap = if spacing == 0.0 { small } else { (small + spacing).max(0.0) };
-    position_warichu_rows(line, members, &counts, &widths, block, old_x0, gap, st);
+    position_warichu_rows(line, members, &counts, &widths, RowLayout { block, x0: old_x0, gap }, st);
     let delta = block - old_span;
     shift_non_member_glyphs(line, members, &old_xs, old_x0, old_right, delta, scale);
     delta
+}
+
+
+#[derive(Clone, Copy)]
+struct RowLayout {
+    block: f64,
+    x0: f64,
+    gap: f64,
 }
 
 fn position_warichu_rows(
@@ -234,11 +242,13 @@ fn position_warichu_rows(
     members: &[usize],
     counts: &[usize],
     widths: &[f64],
-    block: f64,
-    old_x0: f64,
-    gap: f64,
+    layout: RowLayout,
     st: &RunStyle,
 ) {
+    let block = layout.block;
+    let old_x0 = layout.x0;
+    let gap = layout.gap;
+
     let rows = counts.len().max(1);
     let mut off = 0_usize;
     for (li, &c) in counts.iter().enumerate() {
