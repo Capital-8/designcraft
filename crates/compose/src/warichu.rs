@@ -229,7 +229,6 @@ fn layout(styles: &[RunStyle], line: &mut [PlacedGlyph], members: &[usize]) -> f
     delta
 }
 
-
 #[derive(Clone, Copy)]
 struct RowLayout {
     block: f64,
@@ -237,14 +236,7 @@ struct RowLayout {
     gap: f64,
 }
 
-fn position_warichu_rows(
-    line: &mut [PlacedGlyph],
-    members: &[usize],
-    counts: &[usize],
-    widths: &[f64],
-    layout: RowLayout,
-    st: &RunStyle,
-) {
+fn position_warichu_rows(line: &mut [PlacedGlyph], members: &[usize], counts: &[usize], widths: &[f64], layout: RowLayout, st: &RunStyle) {
     let block = layout.block;
     let old_x0 = layout.x0;
     let gap = layout.gap;
