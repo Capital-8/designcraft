@@ -4508,3 +4508,165 @@ mod story_target_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod enablement_followup {
+    use super::*;
+    use crate::EngineError;
+
+    const COMMANDS: [&str; 2] = ["file.exportText", "type.fillWithPlaceholder"];
+
+    fn fixture(non_text_selection: bool) -> (Session, Value, Value, Value) {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [0, 0, 100, 80], "content": "text", "text": "Explicit"})).unwrap();
+        let b = s.execute("frame.create", &json!({"rect": [0, 100, 100, 180], "content": "text", "text": "Other"})).unwrap();
+        let non_text = s.execute("frame.create", &json!({"rect": [0, 200, 100, 280], "content": "unassigned"})).unwrap()["id"].clone();
+        let ids = if non_text_selection { json!([non_text]) } else { json!([]) };
+        s.execute("selection.set", &json!({"ids": ids})).unwrap();
+        (s, a, b, non_text)
+    }
+
+    fn valid_targets(command: &str) {
+        for non_text_selection in [false, true] {
+            for target in ["story", "frame", "both", "null-story", "null-frame"] {
+                let (mut s, a, b, _) = fixture(non_text_selection);
+                let p = match target {
+                    "story" => json!({"story": a["story"]}),
+                    "frame" => json!({"frame": a["id"]}),
+                    "both" => json!({"story": a["story"], "frame": b["id"]}),
+                    "null-story" => json!({"story": null, "frame": a["id"]}),
+                    _ => json!({"story": a["story"], "frame": null}),
+                };
+                // Execution may bypass this selection-only guard, but menus must not.
+                assert!((crate::find_command(command).unwrap().enabled)(&s).is_err());
+                let before = s.doc().unwrap().doc.clone();
+                let steps = s.doc().unwrap().history.undo.len();
+                let result = s.execute(command, &p).unwrap_or_else(|e| panic!("{command} {target} non-text={non_text_selection}: {e}"));
+                let doc = &s.doc().unwrap().doc;
+                let story = doc.story(StoryId(a["story"].as_u64().unwrap())).unwrap();
+                assert_eq!(doc.story(StoryId(b["story"].as_u64().unwrap())), before.story(StoryId(b["story"].as_u64().unwrap())));
+                if command == "file.exportText" {
+                    assert_eq!(result["text"], "Explicit");
+                    assert_eq!(doc, &before);
+                    assert_eq!(s.doc().unwrap().history.undo.len(), steps);
+                } else {
+                    assert!(!story.text.is_empty() && story.text != "Explicit");
+                    assert_eq!(s.doc().unwrap().history.undo.len(), steps + 1);
+                    s.execute("edit.undo", &json!({})).unwrap();
+                    assert_eq!(s.doc().unwrap().doc, before);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn export_executes_explicit_targets_without_enabling_selection() {
+        valid_targets("file.exportText");
+    }
+
+    #[test]
+    fn placeholder_executes_explicit_targets_without_enabling_selection() {
+        valid_targets("type.fillWithPlaceholder");
+    }
+
+    #[test]
+    fn placeholder_converts_explicit_non_text_frame_in_one_undo() {
+        for non_text_selection in [false, true] {
+            let (mut s, _, _, frame) = fixture(non_text_selection);
+            let before = s.doc().unwrap().doc.clone();
+            let steps = s.doc().unwrap().history.undo.len();
+            s.execute("type.fillWithPlaceholder", &json!({"frame": frame})).unwrap();
+            let doc = &s.doc().unwrap().doc;
+            let sid = doc.item(ItemId(frame.as_u64().unwrap())).unwrap().text_frame().unwrap().story;
+            assert!(!doc.story(sid).unwrap().text.is_empty());
+            assert_eq!(s.doc().unwrap().history.undo.len(), steps + 1);
+            s.execute("edit.undo", &json!({})).unwrap();
+            assert_eq!(s.doc().unwrap().doc, before);
+        }
+    }
+
+    #[test]
+    fn invalid_targets_reach_validator_before_conversion_or_export_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("untouched.txt");
+        std::fs::write(&path, "sentinel").unwrap();
+        for command in COMMANDS {
+            for non_text_selection in [false, true] {
+                let (mut s, a, _, non_text) = fixture(non_text_selection);
+                let before = s.doc().unwrap().doc.clone();
+                let steps = s.doc().unwrap().history.undo.len();
+                let mut cases = vec![
+                    (json!({"story": 999999}), "no such story 999999".to_string()),
+                    (json!({"frame": 999999}), "no such frame 999999".to_string()),
+                    (json!({"story": a["story"], "frame": 999999}), "no such frame 999999".to_string()),
+                    (json!({"story": 999999, "frame": non_text}), "no such story 999999".to_string()),
+                ];
+                for key in ["story", "frame"] {
+                    for value in [json!("bad"), json!("1"), json!(-1), json!(1.0), json!(1.5), json!(true), json!({}), json!([])] {
+                        let message = format!("`{key}` must be an unsigned integer");
+                        let mut p = json!({});
+                        p[key] = value.clone();
+                        cases.push((p, message.clone()));
+                        let mut p = json!({"story": a["story"], "frame": non_text});
+                        p[key] = value;
+                        cases.push((p, message));
+                    }
+                }
+                if command == "file.exportText" {
+                    cases.push((json!({"frame": non_text}), format!("frame {non_text} holds no text")));
+                    cases.push((json!({"story": a["story"], "frame": non_text}), format!("frame {non_text} holds no text")));
+                }
+                for (mut p, message) in cases {
+                    if command == "file.exportText" {
+                        p["path"] = json!(path);
+                    }
+                    let e = s.execute(command, &p).unwrap_err();
+                    assert!(matches!(&e, EngineError::BadParams { .. }), "{command} {p}: {e}");
+                    assert!(e.to_string().contains(&message), "{command} {p}: {e}; expected {message}");
+                    assert_eq!(s.doc().unwrap().doc, before);
+                    assert_eq!(s.doc().unwrap().history.undo.len(), steps);
+                    assert_eq!(std::fs::read_to_string(&path).unwrap(), "sentinel");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn absent_and_null_targets_keep_selection_guards() {
+        for command in COMMANDS {
+            for non_text_selection in [false, true] {
+                let (mut s, _, _, _) = fixture(non_text_selection);
+                for p in [json!({}), json!({"story": null}), json!({"frame": null}), json!({"story": null, "frame": null}), Value::Null] {
+                    assert!(matches!(s.execute(command, &p), Err(EngineError::Disabled(..))), "{command} {p}");
+                    assert!((crate::find_command(command).unwrap().enabled)(&s).is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_document_cannot_bypass_selection_guards() {
+        let mut s = Session::new();
+        for command in COMMANDS {
+            for p in [json!({"story": 1}), json!({"frame": 1}), json!({"story": "bad", "frame": 1})] {
+                assert!(matches!(s.execute(command, &p), Err(EngineError::Disabled(..))), "{command} {p}");
+            }
+        }
+    }
+
+    #[test]
+    fn unrelated_commands_cannot_use_story_or_frame_bypass() {
+        let (mut s, a, _, _) = fixture(false);
+        let before = s.doc().unwrap().doc.clone();
+        let steps = s.doc().unwrap().history.undo.len();
+        // Attribute commands pass parameter-key checking but still require a text selection.
+        for command in ["type.char", "type.para"] {
+            for p in [json!({"story": a["story"]}), json!({"frame": a["id"]})] {
+                assert!(matches!(s.execute(command, &p), Err(EngineError::Disabled(..))), "{command} {p}");
+            }
+        }
+        assert_eq!(s.doc().unwrap().doc, before);
+        assert_eq!(s.doc().unwrap().history.undo.len(), steps);
+    }
+}

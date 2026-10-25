@@ -56,8 +56,10 @@ so only enable it while you use it. Transport: `apps/designcraft/src/control_ser
 For `story.setDirection`, `story.get`, `type.fillWithPlaceholder` and `file.exportText`,
 `story` and `frame` targets must be unsigned integer IDs. Both are checked when supplied,
 even when `story` takes precedence. Missing or null targets use the selection; malformed
-explicit IDs never do. Placeholder text can still convert a valid non-text frame to text;
-the other three commands require a text frame.
+explicit IDs never do. With an active document, explicit targets for `file.exportText`
+and `type.fillWithPlaceholder` do not require a text selection; their menu enablement stays
+selection-based. Placeholder text can still convert a valid non-text frame to text; the other
+three commands require a text frame.
 
 Data merge runs through `engine.execute` like any command: `data.source.select`, `data.fields`, `data.placeholder.add` /
 `.remove`, `data.options`, `data.preview` / `data.preview.stop`, `data.merge`. `data.merge` creates and activates a new

@@ -15,6 +15,9 @@ DesignCraft aims at full Adobe InDesign parity — and to be better: faster, ope
 - **2026-10-25** · The application bar uses craft-window's shared title-bar code. A drag that
   starts on a floating panel over the bar moves the panel, not the window, and in full screen the
   bar no longer zooms or moves the window. No readiness percentage change.
+- **2026-10-25** · Explicit story/frame targets for text export and placeholder fill no longer
+  require a text selection. Menu enablement stays selection-based; target validation still runs
+  before export writes or placeholder conversion, with conversion and fill undone together.
 - **2026-10-24** · Embedded IDML keeps independent placed-PDF layer choices in table-cell and
   footnote text. The variant rewrite reaches endnote stories too, but IDML endnote structures and
   artwork remain unsupported. External-only export continues to reject active nested choices.
