@@ -29,22 +29,25 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Cross-compiling (the release workflow builds aarch64 in an x86_64 VM) takes the arch from the target,
-# because uname -m reports the host.
-if [[ -n "${CARGO_BUILD_TARGET:-}" ]]; then
-  case "$CARGO_BUILD_TARGET" in
-    aarch64-unknown-freebsd) ARCH=aarch64 ;;
-    *) ARCH=x86_64 ;;
+# Release file names use x86_64 and aarch64 like the Linux and Windows ones.
+release_arch() {
+  local arch="$1"
+  case "$arch" in
+    amd64 | x86_64) echo x86_64 ;;
+    arm64 | aarch64) echo aarch64 ;;
+    *) echo "unsupported architecture $arch" >&2; return 2 ;;
   esac
-else
-  # FreeBSD's uname says amd64; release file names use x86_64 like the Linux and Windows ones.
-  MACHINE="$(uname -m)"
-  case "$MACHINE" in
-    amd64 | x86_64) ARCH=x86_64 ;;
-    arm64 | aarch64) ARCH=aarch64 ;;
-    *) echo "unsupported architecture $MACHINE" >&2; exit 2 ;;
-  esac
-fi
+  return
+}
+# The release workflow cross-compiles aarch64 in an x86_64 VM with CARGO_BUILD_TARGET set to
+# aarch64-unknown-freebsd: name the archive after the target, not the host's uname -m.
+case "${CARGO_BUILD_TARGET:-}" in
+  "") ARCH="$(release_arch "$(uname -m)")" ;;
+  aarch64-unknown-freebsd | x86_64-unknown-freebsd) ARCH="$(release_arch "${CARGO_BUILD_TARGET%%-*}")" ;;
+  *) echo "CARGO_BUILD_TARGET=$CARGO_BUILD_TARGET is not a supported FreeBSD target" >&2; exit 2 ;;
+esac
+# Only binaries for this machine can run here (the --version check at the end).
+HOST_ARCH="$(release_arch "$(uname -m)" 2>/dev/null)" || HOST_ARCH=""
 if [[ "$DRY_RUN" = 0 ]] && [[ "$(uname -s)" != FreeBSD ]]; then
   echo "error: build on FreeBSD (or pass --dry-run to check the tree layout)" >&2
   exit 2
@@ -105,8 +108,11 @@ mkdir -p "$OUT_DIR"
 tar -C "$WORK" -czf "$OUT_DIR/$BASENAME.tar.gz" "$BASENAME"
 echo "wrote $OUT_DIR/$BASENAME.tar.gz"
 
-# A cross-built binary cannot run on this host.
-if [[ -z "${CARGO_BUILD_TARGET:-}" ]]; then "$STAGE/bin/designcraft-cli" --version; fi
+if [[ "$ARCH" = "$HOST_ARCH" ]]; then
+  "$STAGE/bin/designcraft-cli" --version
+else
+  echo "skipping --version: $ARCH binaries do not run on this $HOST_ARCH host"
+fi
 if [[ "$DRY_RUN" = 1 ]]; then
   echo "==> dry run: tarball contents"
   tar -tzvf "$OUT_DIR/$BASENAME.tar.gz"
